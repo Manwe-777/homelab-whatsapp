@@ -1,0 +1,37 @@
+# Homelab WhatsApp - Docker Compose Configuration
+#
+# IMPORTANT: Update NEXT_PUBLIC_API_URL to your server's IP address before building
+# Example: http://192.168.1.100:3008 (replace with your actual homelab IP)
+
+services:
+  whatsapp-api:
+    build: ./backend
+    container_name: whatsapp-api
+    restart: unless-stopped
+    volumes:
+      - whatsapp_auth:/app/wwebjs_auth
+      - puppeteer_cache:/app/.cache/puppeteer
+    ports:
+      - "3008:3008"
+    environment:
+      - PORT=3008
+      - DEBUG=true
+    # Increase shared memory for Chromium
+    shm_size: '2gb'
+
+  whatsapp-ui:
+    build:
+      context: ./frontend
+      args:
+        # CHANGE THIS to your server's LAN IP address
+        - NEXT_PUBLIC_API_URL=${WHATSAPP_API_URL:-http://localhost:3008}
+    container_name: whatsapp-ui
+    restart: unless-stopped
+    ports:
+      - "3009:3000"
+    depends_on:
+      - whatsapp-api
+
+volumes:
+  whatsapp_auth:
+  puppeteer_cache:
