@@ -1175,6 +1175,29 @@ app.get('/api/chats/:id/messages', async (req, res) => {
           }
         }
 
+        // Add quoted message info if this is a reply
+        if (m.hasQuotedMsg) {
+          try {
+            const quotedMsg = await m.getQuotedMessage();
+            if (quotedMsg) {
+              const quotedAuthor = quotedMsg.author || quotedMsg.from;
+              const quotedAuthorName = quotedMsg.fromMe
+                ? 'You'
+                : (quotedMsg._data?.notifyName || contactInfoMap[quotedAuthor]?.name || quotedAuthor?.split('@')[0] || null);
+
+              base.quotedMsg = {
+                body: quotedMsg.body || '',
+                type: quotedMsg.type || 'chat',
+                hasMedia: !!quotedMsg.hasMedia,
+                fromMe: !!quotedMsg.fromMe,
+                senderName: quotedAuthorName,
+              };
+            }
+          } catch (quotedErr) {
+            log('Error fetching quoted message:', quotedErr.message);
+          }
+        }
+
         processedMessages.push(base);
       } catch (msgProcessErr) {
         log(`Error processing message:`, msgProcessErr.message);

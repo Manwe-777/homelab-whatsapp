@@ -7,6 +7,14 @@ export type Chat = {
   profilePic?: string | null;
 };
 
+export type QuotedMessage = {
+  body: string;
+  type: string;
+  hasMedia: boolean;
+  fromMe: boolean;
+  senderName?: string;
+};
+
 export type Message = {
   id: string | object;
   msgId: string;
@@ -20,6 +28,7 @@ export type Message = {
   senderPic?: string;
   senderId?: string;
   mentionedIds?: string[];
+  quotedMsg?: QuotedMessage;
 };
 
 export type DebugLog = {
