@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useDebugLog } from "@/hooks";
-import { API_URL, WS_URL } from "@/utils/config";
+import { WS_URL } from "@/utils/config";
 import {
   fetchStatus as apiFetchStatus,
   fetchQR,

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { API_URL, DEBUG } from "@/utils/config";
+import { DEBUG } from "@/utils/config";
 import { DebugPanel } from "./DebugPanel";
 import type { DebugLog } from "@/types";
 
@@ -23,7 +23,7 @@ export function ConnectingScreen({ apiReachable, logs }: ConnectingScreenProps) 
       </p>
       <div className="mt-4 flex gap-3">
         <button
-          onClick={() => window.open(`${API_URL}/api/screenshot`, '_blank')}
+          onClick={() => window.open("/api/screenshot", '_blank')}
           className="cursor-pointer text-xs text-zinc-600 hover:text-zinc-400"
         >
           View browser

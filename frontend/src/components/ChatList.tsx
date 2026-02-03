@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { API_URL } from "@/utils/config";
 import { Avatar } from "./Avatar";
 import type { Chat } from "@/types";
 
@@ -19,7 +18,7 @@ export function ChatList({ chats, selectedChat, profilePics, onSelectChat }: Cha
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-medium text-white">WhatsApp</h1>
           <button
-            onClick={() => window.open(`${API_URL}/api/screenshot`, '_blank')}
+            onClick={() => window.open("/api/screenshot", '_blank')}
             className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300"
             title="View browser screenshot"
           >

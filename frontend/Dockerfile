@@ -9,8 +9,6 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-ARG NEXT_PUBLIC_API_URL=http://localhost:3008
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM base AS runner
@@ -25,4 +23,7 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+# Runtime env vars (set via docker-compose or docker run -e):
+# - BACKEND_URL: Backend API URL for proxy (default: http://localhost:3008)
+# - NEXT_PUBLIC_WS_PORT: WebSocket port (default: 3008)
 CMD ["node", "server.js"]

@@ -1,4 +1,5 @@
-import { API_URL } from "./config";
+// All API calls go through Next.js API routes (which proxy to the backend)
+// No need for absolute URLs - just use relative paths
 
 export async function fetchWithTimeout(
   url: string,
@@ -16,23 +17,23 @@ export async function fetchWithTimeout(
 }
 
 export async function fetchStatus() {
-  const res = await fetchWithTimeout(`${API_URL}/api/status`);
+  const res = await fetchWithTimeout("/api/status");
   return res.json();
 }
 
 export async function fetchQR() {
-  const res = await fetchWithTimeout(`${API_URL}/api/qr`);
+  const res = await fetchWithTimeout("/api/qr");
   return res.json();
 }
 
 export async function fetchPairingCode() {
-  const res = await fetchWithTimeout(`${API_URL}/api/pairing-code`);
+  const res = await fetchWithTimeout("/api/pairing-code");
   if (!res.ok) return null;
   return res.json();
 }
 
 export async function requestPairingCode(phoneNumber: string) {
-  const res = await fetch(`${API_URL}/api/pairing-code`, {
+  const res = await fetch("/api/pairing-code", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ phoneNumber }),
@@ -45,7 +46,7 @@ export async function requestPairingCode(phoneNumber: string) {
 }
 
 export async function fetchChats(limit = 50, type?: 'group' | 'direct' | 'all') {
-  let url = `${API_URL}/api/chats?limit=${limit}&timeout=30000`;
+  let url = `/api/chats?limit=${limit}&timeout=30000`;
   if (type && type !== 'all') {
     url += `&type=${type}`;
   }
@@ -64,7 +65,7 @@ export async function fetchMessages(
   options: { sync?: boolean; fetchNames?: boolean } = {}
 ) {
   const id = encodeURIComponent(chatId);
-  let url = `${API_URL}/api/chats/${id}/messages?limit=${limit}&timeout=30000`;
+  let url = `/api/chats/${id}/messages?limit=${limit}&timeout=30000`;
   if (before) {
     url += `&before=${before}`;
   }
@@ -84,7 +85,7 @@ export async function fetchMessages(
 
 export async function sendMessage(chatId: string, msg: string) {
   const id = encodeURIComponent(chatId);
-  const res = await fetch(`${API_URL}/api/chats/${id}/messages`, {
+  const res = await fetch(`/api/chats/${id}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ msg }),
@@ -100,7 +101,7 @@ export async function sendMedia(
   caption?: string
 ) {
   const id = encodeURIComponent(chatId);
-  const res = await fetch(`${API_URL}/api/chats/${id}/media`, {
+  const res = await fetch(`/api/chats/${id}/media`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data, mimetype, filename, caption }),
@@ -114,12 +115,12 @@ export async function sendMedia(
 
 export async function markChatAsRead(chatId: string) {
   const id = encodeURIComponent(chatId);
-  await fetch(`${API_URL}/api/chats/${id}/read`, { method: 'POST' });
+  await fetch(`/api/chats/${id}/read`, { method: 'POST' });
 }
 
 export async function fetchProfilePic(chatId: string) {
   const id = encodeURIComponent(chatId);
-  const res = await fetch(`${API_URL}/api/profile-pic/${id}`);
+  const res = await fetch(`/api/profile-pic/${id}`);
   if (!res.ok) return null;
   const data = await res.json();
   return data.url;
@@ -128,7 +129,7 @@ export async function fetchProfilePic(chatId: string) {
 export async function fetchMedia(chatId: string, msgId: string) {
   const cid = encodeURIComponent(chatId);
   const mid = encodeURIComponent(msgId);
-  const res = await fetch(`${API_URL}/api/media/${cid}/${mid}`);
+  const res = await fetch(`/api/media/${cid}/${mid}`);
   if (!res.ok) {
     throw new Error(`Failed to load media: ${res.status}`);
   }
@@ -164,7 +165,7 @@ export type GroupInfo = {
 
 export async function fetchGroupInfo(groupId: string, fetchNames = false): Promise<GroupInfo> {
   const id = encodeURIComponent(groupId);
-  let url = `${API_URL}/api/groups/${id}`;
+  let url = `/api/groups/${id}`;
   if (fetchNames) {
     url += '?fetchNames=1';
   }
@@ -178,7 +179,7 @@ export async function fetchGroupInfo(groupId: string, fetchNames = false): Promi
 
 export async function fetchGroupInviteCode(groupId: string): Promise<{ code: string; inviteLink: string }> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/invite-code`);
+  const res = await fetch(`/api/groups/${id}/invite-code`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || String(res.status));
@@ -188,7 +189,7 @@ export async function fetchGroupInviteCode(groupId: string): Promise<{ code: str
 
 export async function leaveGroup(groupId: string): Promise<boolean> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/leave`, { method: 'POST' });
+  const res = await fetch(`/api/groups/${id}/leave`, { method: 'POST' });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || String(res.status));
@@ -198,7 +199,7 @@ export async function leaveGroup(groupId: string): Promise<boolean> {
 
 export async function addGroupParticipants(groupId: string, participants: string[]): Promise<boolean> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/participants`, {
+  const res = await fetch(`/api/groups/${id}/participants`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ participants }),
@@ -212,7 +213,7 @@ export async function addGroupParticipants(groupId: string, participants: string
 
 export async function removeGroupParticipants(groupId: string, participants: string[]): Promise<boolean> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/participants`, {
+  const res = await fetch(`/api/groups/${id}/participants`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ participants }),
@@ -226,7 +227,7 @@ export async function removeGroupParticipants(groupId: string, participants: str
 
 export async function promoteGroupParticipants(groupId: string, participants: string[]): Promise<boolean> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/promote`, {
+  const res = await fetch(`/api/groups/${id}/promote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ participants }),
@@ -240,7 +241,7 @@ export async function promoteGroupParticipants(groupId: string, participants: st
 
 export async function demoteGroupParticipants(groupId: string, participants: string[]): Promise<boolean> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/demote`, {
+  const res = await fetch(`/api/groups/${id}/demote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ participants }),
@@ -254,7 +255,7 @@ export async function demoteGroupParticipants(groupId: string, participants: str
 
 export async function updateGroupSubject(groupId: string, subject: string): Promise<boolean> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/subject`, {
+  const res = await fetch(`/api/groups/${id}/subject`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ subject }),
@@ -268,7 +269,7 @@ export async function updateGroupSubject(groupId: string, subject: string): Prom
 
 export async function updateGroupDescription(groupId: string, description: string): Promise<boolean> {
   const id = encodeURIComponent(groupId);
-  const res = await fetch(`${API_URL}/api/groups/${id}/description`, {
+  const res = await fetch(`/api/groups/${id}/description`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ description }),
@@ -303,7 +304,7 @@ export type SearchResponse = {
 };
 
 export async function searchMessages(query: string, chatId?: string, limit = 20): Promise<SearchResponse> {
-  let url = `${API_URL}/api/messages/search?query=${encodeURIComponent(query)}&limit=${limit}`;
+  let url = `/api/messages/search?query=${encodeURIComponent(query)}&limit=${limit}`;
   if (chatId) {
     url += `&chatId=${encodeURIComponent(chatId)}`;
   }
