@@ -87,7 +87,7 @@ export function Message({
             [{m.type === "video" ? "Video" : m.type === "audio" || m.type === "ptt" ? "Audio" : "Media"}]
           </div>
         ) : null}
-        {m.body && <p className="whitespace-pre-wrap text-sm">{renderMessageBody(m.body, m.fromMe)}</p>}
+        {m.body && <p className="whitespace-pre-wrap break-words text-sm">{renderMessageBody(m.body, m.fromMe)}</p>}
         {!m.body && !m.hasMedia && <p className="text-sm text-zinc-400">(empty)</p>}
         <p className="mt-1 text-right text-xs opacity-70">
           {formatTime(m.timestamp)}

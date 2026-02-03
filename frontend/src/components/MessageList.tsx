@@ -56,7 +56,7 @@ export function MessageList({
   return (
     <div
       ref={containerRef}
-      className="flex flex-1 flex-col-reverse overflow-y-auto p-4"
+      className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto p-4"
       onScroll={handleScroll}
     >
       <div className="flex flex-col gap-2">

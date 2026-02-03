@@ -37,7 +37,7 @@ export function MessageInput({
   };
 
   return (
-    <div className="border-t border-zinc-800 p-3">
+    <div className="flex-shrink-0 border-t border-zinc-800 p-3">
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           ref={fileInputRef}

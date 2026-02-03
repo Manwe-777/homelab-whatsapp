@@ -9,12 +9,13 @@ type ChatListProps = {
   selectedChat: Chat | null;
   profilePics: Record<string, string | null>;
   onSelectChat: (chat: Chat) => void;
+  className?: string;
 };
 
-export function ChatList({ chats, selectedChat, profilePics, onSelectChat }: ChatListProps) {
+export function ChatList({ chats, selectedChat, profilePics, onSelectChat, className = "" }: ChatListProps) {
   return (
-    <div className="flex w-80 flex-col border-r border-zinc-800">
-      <div className="border-b border-zinc-800 p-3">
+    <div className={`flex w-full flex-col border-r border-zinc-800 md:w-80 ${className}`}>
+      <div className="flex-shrink-0 border-b border-zinc-800 p-3">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-medium text-white">WhatsApp</h1>
           <button
@@ -27,7 +28,7 @@ export function ChatList({ chats, selectedChat, profilePics, onSelectChat }: Cha
         </div>
         <p className="text-xs text-emerald-500">Connected</p>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {chats.map((chat) => (
           <button
             key={chat.id}

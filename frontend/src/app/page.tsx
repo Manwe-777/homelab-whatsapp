@@ -225,6 +225,10 @@ export default function Home() {
     }
   }, [fetchProfilePic, log]);
 
+  const handleBack = useCallback(() => {
+    setSelectedChat(null);
+  }, []);
+
   // Status polling
   useEffect(() => {
     fetchStatus();
@@ -360,17 +364,27 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-900">
+    <div className="flex h-screen w-screen overflow-hidden bg-zinc-900">
+      {/* Chat list - full width on mobile, fixed width on desktop */}
+      {/* Hidden on mobile when a chat is selected */}
       <ChatList
         chats={chats}
         selectedChat={selectedChat}
         profilePics={profilePics}
         onSelectChat={handleSelectChat}
+        className={selectedChat ? "hidden md:flex" : "flex"}
       />
-      <div className="flex flex-1 flex-col">
+
+      {/* Chat view - full width on mobile, flex-1 on desktop */}
+      {/* Hidden on mobile when no chat is selected */}
+      <div className={`min-w-0 flex-1 flex-col ${selectedChat ? "flex" : "hidden md:flex"}`}>
         {selectedChat ? (
           <>
-            <ChatHeader chat={selectedChat} profilePic={profilePics[selectedChat.id]} />
+            <ChatHeader
+              chat={selectedChat}
+              profilePic={profilePics[selectedChat.id]}
+              onBack={handleBack}
+            />
             <MessageList
               messages={messages}
               chat={selectedChat}
