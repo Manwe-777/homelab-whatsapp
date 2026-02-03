@@ -1175,6 +1175,29 @@ app.get('/api/chats/:id/messages', async (req, res) => {
           }
         }
 
+        // Add contact info for e2e_notification (security code change) messages
+        if (m.type === 'e2e_notification' && m.body) {
+          try {
+            // Body contains the LID of the affected contact (e.g., "216127133220879@lid")
+            const lid = m.body.trim();
+            // Try to get contact info - whatsapp-web.js may be able to resolve LIDs
+            const contactInfo = await getContactInfo(lid);
+            if (contactInfo.name) {
+              base.e2eContactName = contactInfo.name;
+            } else {
+              // Try to extract phone from participant info in message ID if available
+              const participantMatch = m.id?._serialized?.match(/(\d+)@c\.us$/);
+              if (participantMatch) {
+                const participantId = `${participantMatch[1]}@c.us`;
+                const participantInfo = await getContactInfo(participantId);
+                base.e2eContactName = participantInfo.name || `+${participantMatch[1]}`;
+              }
+            }
+          } catch (e2eErr) {
+            log('Error getting e2e notification contact:', e2eErr.message);
+          }
+        }
+
         // Add quoted message info if this is a reply
         if (m.hasQuotedMsg) {
           try {

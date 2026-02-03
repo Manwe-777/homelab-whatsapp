@@ -29,6 +29,7 @@ export type Message = {
   senderId?: string;
   mentionedIds?: string[];
   quotedMsg?: QuotedMessage;
+  e2eContactName?: string;
 };
 
 export type DebugLog = {

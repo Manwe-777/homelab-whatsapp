@@ -88,6 +88,7 @@ export function MessageList({
             key={typeof m.id === "object" ? JSON.stringify(m.id) : String(m.id)}
             message={m}
             isGroup={chat.isGroup}
+            chatName={chat.name}
             loadedMedia={loadedMedia[m.msgId]}
             loadingMedia={loadingMedia[m.msgId]}
             onLoadMedia={() => onLoadMedia(m.msgId)}

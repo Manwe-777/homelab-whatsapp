@@ -7,6 +7,7 @@ import type { Message as MessageType } from "@/types";
 type MessageProps = {
   message: MessageType;
   isGroup: boolean;
+  chatName?: string;
   loadedMedia?: string;
   loadingMedia?: boolean;
   onLoadMedia: () => void;
@@ -25,6 +26,7 @@ function isSecurityNotification(m: MessageType): boolean {
 export function Message({
   message: m,
   isGroup,
+  chatName,
   loadedMedia,
   loadingMedia,
   onLoadMedia,
@@ -32,13 +34,17 @@ export function Message({
 }: MessageProps) {
   // Render security notifications as subtle system messages
   if (isSecurityNotification(m)) {
+    // Use e2eContactName from backend if available, otherwise fallback
+    const contactName = m.e2eContactName
+      || (isGroup ? (m.senderName || "a contact") : (chatName || "this contact"));
+
     return (
       <div className="flex justify-center py-1">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          <span>Security code changed</span>
+          <span>Security code changed with {contactName}</span>
         </div>
       </div>
     );
