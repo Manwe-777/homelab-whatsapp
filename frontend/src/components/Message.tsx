@@ -82,9 +82,26 @@ export function Message({
               {loadingMedia ? "Loading..." : `[Load ${m.type}]`}
             </button>
           )
+        ) : m.hasMedia && m.type === "video" ? (
+          loadedMedia ? (
+            <video
+              src={loadedMedia}
+              controls
+              className="max-h-64 max-w-full rounded"
+              playsInline
+            />
+          ) : (
+            <button
+              onClick={onLoadMedia}
+              disabled={loadingMedia}
+              className="cursor-pointer text-sm text-emerald-400 hover:text-emerald-300 disabled:cursor-wait disabled:text-zinc-500"
+            >
+              {loadingMedia ? "Loading..." : "[Load video]"}
+            </button>
+          )
         ) : m.hasMedia ? (
           <div className="text-sm italic text-zinc-400">
-            [{m.type === "video" ? "Video" : m.type === "audio" || m.type === "ptt" ? "Audio" : "Media"}]
+            [{m.type === "audio" || m.type === "ptt" ? "Audio" : "Media"}]
           </div>
         ) : null}
         {m.body && <p className="whitespace-pre-wrap break-words text-sm">{renderMessageBody(m.body, m.fromMe)}</p>}
