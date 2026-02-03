@@ -47,6 +47,7 @@ export default function Home() {
   const [apiReachable, setApiReachable] = useState<boolean | null>(null);
   const [profilePics, setProfilePics] = useState<Record<string, string | null>>({});
   const [sendingMedia, setSendingMedia] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const selectedChatRef = useRef<Chat | null>(null);
@@ -180,9 +181,11 @@ export default function Home() {
     if (!selectedChat || !input.trim() || sending) return;
     setSending(true);
     try {
-      const success = await apiSendMessage(selectedChat.id, input.trim());
+      const quotedMsgId = replyingTo?.msgId;
+      const success = await apiSendMessage(selectedChat.id, input.trim(), quotedMsgId);
       if (success) {
         setInput("");
+        setReplyingTo(null);
         fetchMessages(selectedChat.id);
       }
     } catch (e) {
@@ -190,6 +193,14 @@ export default function Home() {
     }
     setSending(false);
   };
+
+  const handleReply = useCallback((message: Message) => {
+    setReplyingTo(message);
+  }, []);
+
+  const handleCancelReply = useCallback(() => {
+    setReplyingTo(null);
+  }, []);
 
   const sendMedia = async (file: File) => {
     if (!selectedChat || sendingMedia) return;
@@ -261,6 +272,7 @@ export default function Home() {
       setHasMoreMessages(false);
       setOldestTimestamp(null);
       setLoadingMore(false);
+      setReplyingTo(null);
       fetchMessages(selectedChat.id, true);
       const interval = setInterval(() => fetchMessages(selectedChat.id, false), 15000);
       return () => clearInterval(interval);
@@ -269,6 +281,7 @@ export default function Home() {
       setLoadingMessages(false);
       setLoadedMedia({});
       setLoadingMedia({});
+      setReplyingTo(null);
     }
   }, [selectedChat, fetchMessages]);
 
@@ -395,6 +408,7 @@ export default function Home() {
               loadingMedia={loadingMedia}
               onLoadMore={loadMoreMessages}
               onLoadMedia={loadMedia}
+              onReply={handleReply}
               containerRef={messagesContainerRef}
             />
             <MessageInput
@@ -404,6 +418,8 @@ export default function Home() {
               onSendMedia={sendMedia}
               sending={sending}
               sendingMedia={sendingMedia}
+              replyingTo={replyingTo}
+              onCancelReply={handleCancelReply}
             />
           </>
         ) : (

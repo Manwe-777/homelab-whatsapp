@@ -14,6 +14,7 @@ type MessageListProps = {
   loadingMedia: Record<string, boolean>;
   onLoadMore: () => void;
   onLoadMedia: (msgId: string) => void;
+  onReply: (message: MessageType) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
 };
 
@@ -27,6 +28,7 @@ export function MessageList({
   loadingMedia,
   onLoadMore,
   onLoadMedia,
+  onReply,
   containerRef,
 }: MessageListProps) {
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -89,6 +91,7 @@ export function MessageList({
             loadedMedia={loadedMedia[m.msgId]}
             loadingMedia={loadingMedia[m.msgId]}
             onLoadMedia={() => onLoadMedia(m.msgId)}
+            onReply={onReply}
           />
         ))}
       </div>

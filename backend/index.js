@@ -1228,12 +1228,16 @@ app.post('/api/chats/:id/messages', async (req, res) => {
     return res.status(503).json({ error: 'Not connected' });
   }
   const chatId = normalizeChatId(req.params.id);
-  const { msg } = req.body;
+  const { msg, quotedMessageId } = req.body;
   if (!msg) {
     return res.status(400).json({ error: 'Message required' });
   }
   try {
-    await client.sendMessage(chatId, msg);
+    const options = {};
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+    }
+    await client.sendMessage(chatId, msg, options);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

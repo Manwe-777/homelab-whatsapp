@@ -83,12 +83,16 @@ export async function fetchMessages(
   return res.json();
 }
 
-export async function sendMessage(chatId: string, msg: string) {
+export async function sendMessage(chatId: string, msg: string, quotedMessageId?: string) {
   const id = encodeURIComponent(chatId);
+  const body: { msg: string; quotedMessageId?: string } = { msg };
+  if (quotedMessageId) {
+    body.quotedMessageId = quotedMessageId;
+  }
   const res = await fetch(`/api/chats/${id}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg }),
+    body: JSON.stringify(body),
   });
   return res.ok;
 }
