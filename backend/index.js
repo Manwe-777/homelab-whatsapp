@@ -1138,6 +1138,11 @@ app.get('/api/chats/:id/messages', async (req, res) => {
 
         let body = m.body || '';
 
+        // For group notifications (gp2), try to get body from _data
+        if (m.type === 'gp2' && !body) {
+          body = m._data?.body || m._data?.caption || '';
+        }
+
         // Replace mentions with names
         if (m.mentionedIds?.length && body) {
           for (const mentionId of m.mentionedIds) {
@@ -1198,6 +1203,16 @@ app.get('/api/chats/:id/messages', async (req, res) => {
           }
         }
 
+        // Add notification data for group notifications (gp2)
+        if (m.type === 'gp2') {
+          base.subtype = m._data?.subtype || m.subtype || null;
+          // Recipients can be in different places
+          const recipients = m._data?.recipients || m.recipientIds || [];
+          base.recipients = recipients.map(r => r._serialized || r);
+          // Log for debugging
+          log(`gp2: subtype=${base.subtype}, recipients=${JSON.stringify(base.recipients)}, _data keys=${Object.keys(m._data || {}).join(',')}`);
+        }
+
         // Add quoted message info if this is a reply
         if (m.hasQuotedMsg) {
           try {
@@ -1215,6 +1230,16 @@ app.get('/api/chats/:id/messages', async (req, res) => {
                 fromMe: !!quotedMsg.fromMe,
                 senderName: quotedAuthorName,
               };
+
+              // Add thumbnail for image/video/sticker quoted messages
+              if (quotedMsg.hasMedia && ['image', 'video', 'sticker'].includes(quotedMsg.type)) {
+                // In whatsapp-web.js, _data.body contains the base64 thumbnail for media messages
+                const thumbnailBase64 = quotedMsg._data?.body;
+                if (thumbnailBase64) {
+                  const mimetype = quotedMsg._data?.mimetype || 'image/jpeg';
+                  base.quotedMsg.thumbnail = `data:${mimetype};base64,${thumbnailBase64}`;
+                }
+              }
             }
           } catch (quotedErr) {
             log('Error fetching quoted message:', quotedErr.message);

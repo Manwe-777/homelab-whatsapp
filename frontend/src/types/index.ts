@@ -13,6 +13,7 @@ export type QuotedMessage = {
   hasMedia: boolean;
   fromMe: boolean;
   senderName?: string;
+  thumbnail?: string;
 };
 
 export type Message = {
@@ -30,6 +31,9 @@ export type Message = {
   mentionedIds?: string[];
   quotedMsg?: QuotedMessage;
   e2eContactName?: string;
+  // Group notification (gp2) fields
+  subtype?: string;
+  recipients?: string[];
 };
 
 export type DebugLog = {
