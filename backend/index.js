@@ -155,19 +155,26 @@ function initClient() {
 
   // Real-time message events
   client.on('message', async (msg) => {
+    // Skip newsletter/channel messages - they crash whatsapp-web.js due to missing channelMetadata
+    if (msg.from && msg.from.endsWith('@newsletter')) return;
+
     log('New message from:', msg.from);
-    const chat = await msg.getChat();
-    broadcast('message', {
-      id: msg.id._serialized || msg.id,
-      chatId: msg.from,
-      chatName: chat.name,
-      body: msg.body,
-      fromMe: msg.fromMe,
-      timestamp: msg.timestamp,
-      type: msg.type,
-      hasMedia: msg.hasMedia,
-      isGroup: chat.isGroup,
-    });
+    try {
+      const chat = await msg.getChat();
+      broadcast('message', {
+        id: msg.id._serialized || msg.id,
+        chatId: msg.from,
+        chatName: chat.name,
+        body: msg.body,
+        fromMe: msg.fromMe,
+        timestamp: msg.timestamp,
+        type: msg.type,
+        hasMedia: msg.hasMedia,
+        isGroup: chat.isGroup,
+      });
+    } catch (err) {
+      log('Error processing message from', msg.from, ':', err.message);
+    }
   });
 
   client.on('message_create', async (msg) => {
