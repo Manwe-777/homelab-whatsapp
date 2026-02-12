@@ -985,12 +985,13 @@ app.get('/api/chats/:id/messages', async (req, res) => {
   const chatId = normalizeChatId(req.params.id);
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
   const before = req.query.before ? parseInt(req.query.before) : null;
+  const loaded = parseInt(req.query.loaded) || 0;
   const timeout = parseInt(req.query.timeout) || 30000;
   const sync = req.query.sync === '1' || req.query.sync === 'true';
   // fetchNames defaults to true for initial loads, false for polling
   const fetchNames = req.query.fetchNames !== '0' && req.query.fetchNames !== 'false';
 
-  log(`Fetching messages for ${chatId} (limit=${limit}, before=${before || 'latest'}, sync=${sync}, fetchNames=${fetchNames})`);
+  log(`Fetching messages for ${chatId} (limit=${limit}, before=${before || 'latest'}, loaded=${loaded}, sync=${sync}, fetchNames=${fetchNames})`);
 
   try {
     // Get chat with timeout
@@ -1057,9 +1058,9 @@ app.get('/api/chats/:id/messages', async (req, res) => {
     }
 
     // Fetch messages with timeout
-    // Request more messages than needed to have buffer for filtering
+    // When paginating, fetch enough to cover already-loaded messages plus the new batch
     let allMessages;
-    const fetchLimit = before ? limit * 2 : limit;
+    const fetchLimit = before ? loaded + limit : limit;
     try {
       log(`Fetching up to ${fetchLimit} messages...`);
       allMessages = await Promise.race([

@@ -122,12 +122,21 @@ export default function Home() {
       try {
         // fetchNames=true for initial load (to get pushnames), false for polling
         const data = await apiFetchMessages(chatId, 20, undefined, { fetchNames: isInitial });
-        if (data.messages) {
-          setMessages(data.messages);
+        const incoming = data.messages || (Array.isArray(data) ? data : []);
+        if (isInitial) {
+          setMessages(incoming);
           setHasMoreMessages(data.hasMore || false);
           setOldestTimestamp(data.oldestTimestamp || null);
         } else {
-          setMessages(Array.isArray(data) ? data : []);
+          // Merge new messages into existing state to preserve older loaded messages
+          setMessages(prev => {
+            const byId = new Map(prev.map(m => [m.msgId, m]));
+            for (const msg of incoming) {
+              byId.set(msg.msgId, msg);
+            }
+            return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
+          });
+          // Don't update hasMoreMessages/oldestTimestamp - preserve pagination state
         }
       } catch (e) {
         log("Messages fetch failed: " + String(e));
@@ -147,9 +156,16 @@ export default function Home() {
     setLoadingMore(true);
     try {
       // Use sync=true to trigger syncHistory(), fetchNames=true to get names for older messages
-      const data = await apiFetchMessages(selectedChat.id, 15, oldestTimestamp, { sync: true, fetchNames: true });
+      // Pass loaded count so backend knows how many messages to skip past
+      const data = await apiFetchMessages(selectedChat.id, 15, oldestTimestamp, { sync: true, fetchNames: true, loaded: messages.length });
       if (data.messages && data.messages.length > 0) {
-        setMessages(prev => [...data.messages, ...prev]);
+        setMessages(prev => {
+          const byId = new Map(prev.map(m => [m.msgId, m]));
+          for (const msg of data.messages) {
+            byId.set(msg.msgId, msg);
+          }
+          return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
+        });
         setHasMoreMessages(data.hasMore || false);
         setOldestTimestamp(data.oldestTimestamp || null);
         log(`Loaded ${data.messages.length} more messages`);
@@ -161,7 +177,7 @@ export default function Home() {
     } finally {
       setLoadingMore(false);
     }
-  }, [connected, selectedChat, loadingMore, hasMoreMessages, oldestTimestamp, log]);
+  }, [connected, selectedChat, loadingMore, hasMoreMessages, oldestTimestamp, messages.length, log]);
 
   const loadMedia = useCallback(async (msgId: string) => {
     if (!selectedChat || loadedMedia[msgId] || loadingMedia[msgId]) return;

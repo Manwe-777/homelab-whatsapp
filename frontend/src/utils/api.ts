@@ -62,12 +62,15 @@ export async function fetchMessages(
   chatId: string,
   limit = 20,
   before?: number,
-  options: { sync?: boolean; fetchNames?: boolean } = {}
+  options: { sync?: boolean; fetchNames?: boolean; loaded?: number } = {}
 ) {
   const id = encodeURIComponent(chatId);
   let url = `/api/chats/${id}/messages?limit=${limit}&timeout=30000`;
   if (before) {
     url += `&before=${before}`;
+  }
+  if (options.loaded) {
+    url += `&loaded=${options.loaded}`;
   }
   if (options.sync) {
     url += `&sync=1`;
