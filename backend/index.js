@@ -14,6 +14,21 @@ function log(...args) {
   }
 }
 
+// Extract useful info from potentially minified errors
+function describeError(err) {
+  if (!err) return 'Unknown error (falsy)';
+  if (typeof err === 'string') return err;
+  const msg = err.message || String(err);
+  // If the message is very short (minified), include more context
+  if (msg.length <= 3) {
+    const parts = [`msg="${msg}"`];
+    if (err.stack) parts.push(`stack=${err.stack.split('\n').slice(0, 3).join(' | ')}`);
+    if (err.name && err.name !== 'Error') parts.push(`name=${err.name}`);
+    return parts.join(', ');
+  }
+  return msg;
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' })); // Increase limit for media uploads
@@ -64,8 +79,11 @@ function broadcast(type, data) {
 
 // Cached stats for frequent polling
 let cachedStats = null;
+let lastGoodStats = null; // Last successfully fetched stats (fallback)
 let statsLastUpdated = 0;
 const STATS_CACHE_MS = 10000; // Cache stats for 10 seconds
+let consecutiveGetChatsFailures = 0;
+const MAX_GETCHATS_FAILURES = 10; // After this many, attempt recovery
 
 function initClient() {
   if (client) return client;
@@ -228,6 +246,59 @@ function initClient() {
 
 initClient();
 
+// Recovery: when getChats() fails repeatedly, the Puppeteer page is likely stale.
+// Try refreshing the page first; if that fails, do a full client restart.
+let recoveryInProgress = false;
+async function attemptClientRecovery() {
+  if (recoveryInProgress) return;
+  recoveryInProgress = true;
+
+  try {
+    // Try refreshing the Puppeteer page first (less disruptive)
+    if (client && client.pupPage) {
+      log('Recovery: refreshing Puppeteer page...');
+      try {
+        await client.pupPage.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+        // Wait for WhatsApp Web to re-initialize
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Test if getChats() works now
+        const testChats = await Promise.race([
+          client.getChats(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+        ]);
+        log(`Recovery: page refresh successful, ${testChats.length} chats loaded`);
+        consecutiveGetChatsFailures = 0;
+        recoveryInProgress = false;
+        return;
+      } catch (refreshErr) {
+        log('Recovery: page refresh failed:', describeError(refreshErr));
+      }
+    }
+
+    // If page refresh didn't work, do a full client restart
+    log('Recovery: performing full client restart...');
+    if (client) {
+      try {
+        await client.destroy();
+      } catch (destroyErr) {
+        log('Recovery: destroy error (continuing):', describeError(destroyErr));
+      }
+    }
+    client = null;
+    isReady = false;
+    broadcast('status', { connected: false, hasQr: false, hasPairingCode: false });
+
+    // Wait before reinitializing
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    initClient();
+    log('Recovery: client reinitialization started');
+  } catch (err) {
+    log('Recovery error:', describeError(err));
+  } finally {
+    recoveryInProgress = false;
+  }
+}
+
 // Stats for dashboard integration (Glance, etc.)
 // Cached to allow frequent polling without overloading
 app.get('/api/stats', async (req, res) => {
@@ -290,23 +361,49 @@ app.get('/api/stats', async (req, res) => {
     };
 
     cachedStats = stats;
+    lastGoodStats = stats; // Save as last-known-good
     statsLastUpdated = now;
+    consecutiveGetChatsFailures = 0;
     res.json(stats);
   } catch (err) {
-    log('Stats error:', err.message);
-    const stats = {
-      status: 'error',
-      error: err.message,
-      unreadTotal: 0,
-      unreadChats: 0,
-      unreadGroups: 0,
-      unreadMentions: 0,
-      totalChats: 0,
-      cachedAt: new Date().toISOString(),
-    };
-    cachedStats = stats;
-    statsLastUpdated = now;
-    res.json(stats);
+    consecutiveGetChatsFailures++;
+    log('Stats error:', describeError(err), `(failure #${consecutiveGetChatsFailures})`);
+
+    // If we have last-known-good stats, return those with a stale marker
+    // instead of returning an error that breaks the Glance widget
+    if (lastGoodStats) {
+      const staleStats = {
+        ...lastGoodStats,
+        status: 'connected',
+        cachedAt: lastGoodStats.cachedAt,
+        stale: true,
+      };
+      cachedStats = staleStats;
+      statsLastUpdated = now;
+      res.json(staleStats);
+    } else {
+      const stats = {
+        status: 'error',
+        error: describeError(err),
+        unreadTotal: 0,
+        unreadChats: 0,
+        unreadGroups: 0,
+        unreadMentions: 0,
+        totalChats: 0,
+        cachedAt: new Date().toISOString(),
+      };
+      cachedStats = stats;
+      statsLastUpdated = now;
+      res.json(stats);
+    }
+
+    // If getChats() keeps failing, the Puppeteer page is likely in a bad state
+    // Attempt recovery by restarting the client
+    if (consecutiveGetChatsFailures >= MAX_GETCHATS_FAILURES) {
+      log(`getChats() failed ${consecutiveGetChatsFailures} times in a row — attempting client recovery`);
+      consecutiveGetChatsFailures = 0;
+      attemptClientRecovery();
+    }
   }
 });
 
@@ -436,8 +533,8 @@ app.get('/api/chats', async (req, res) => {
     log(`Returning ${list.length} chats (of ${filtered.length} filtered, ${chats.length} total)`);
     res.json(list);
   } catch (err) {
-    log('Chats error:', err.message);
-    res.status(500).json({ error: err.message });
+    log('Chats error:', describeError(err));
+    res.status(500).json({ error: describeError(err) });
   }
 });
 
