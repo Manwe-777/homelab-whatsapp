@@ -10,7 +10,7 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "qrcode": "^1.5.3",
-    "whatsapp-web.js": "github:timothydillan/whatsapp-web.js#fix/duplicate-events-and-bindings",
+    "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#main",
     "ws": "^8.18.0"
   }
 }

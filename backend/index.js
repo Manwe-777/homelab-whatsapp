@@ -8,6 +8,44 @@ const { Client, LocalAuth, MessageMedia } = pkg;
 
 const DEBUG = process.env.DEBUG !== 'false'; // Set DEBUG=false to disable
 
+// Simple TTL + max-size cache to prevent unbounded memory growth
+class BoundedCache {
+  constructor(maxSize = 2000, ttlMs = 1800000) {
+    this._map = new Map();
+    this._maxSize = maxSize;
+    this._ttlMs = ttlMs;
+  }
+  get(key) {
+    const entry = this._map.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.timestamp > this._ttlMs) {
+      this._map.delete(key);
+      return undefined;
+    }
+    // Move to end (most recently used)
+    this._map.delete(key);
+    this._map.set(key, entry);
+    return entry;
+  }
+  set(key, value) {
+    this._map.delete(key); // Remove if exists (reinsert at end)
+    if (this._map.size >= this._maxSize) {
+      // Evict oldest entry (first key in Map iteration order)
+      const oldest = this._map.keys().next().value;
+      this._map.delete(oldest);
+    }
+    this._map.set(key, { ...value, timestamp: Date.now() });
+  }
+  sweep() {
+    const now = Date.now();
+    for (const [key, entry] of this._map) {
+      if (now - entry.timestamp > this._ttlMs) this._map.delete(key);
+    }
+  }
+  get size() { return this._map.size; }
+  clear() { this._map.clear(); }
+}
+
 function log(...args) {
   if (DEBUG) {
     console.log(`[${new Date().toISOString()}]`, ...args);
@@ -105,12 +143,10 @@ function initClient() {
         '--disable-plugins-discovery',
         '--disable-default-apps',
         '--no-first-run',
-        '--no-zygote',
-        '--single-process',
+        '--disable-features=TranslateUI',
         '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       ],
     },
-    // Use remote WhatsApp Web versions - often fixes "refused to sync" when scanning QR
     webVersionCache: {
       type: 'remote',
       remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
@@ -139,16 +175,24 @@ function initClient() {
 
   client.on('auth_failure', (msg) => {
     log('Auth failure:', msg);
-    // Reset state on auth failure
+    // Reset state and reconnect (e.g. Puppeteer target closed)
+    isReady = false;
     qrData = null;
     pairingCode = null;
-    isReady = false;
+    if (client) client.removeAllListeners();
+    client = null;
+    log('Scheduling reconnection after auth failure in 5 seconds...');
+    setTimeout(() => {
+      log('Attempting to reconnect after auth failure...');
+      initClient();
+    }, 5000);
   });
 
   client.on('disconnected', (reason) => {
     isReady = false;
     log('Disconnected:', reason);
     // Cleanup and attempt reconnection
+    if (client) client.removeAllListeners();
     client = null;
     qrData = null;
     pairingCode = null;
@@ -279,6 +323,7 @@ async function attemptClientRecovery() {
     log('Recovery: performing full client restart...');
     if (client) {
       try {
+        client.removeAllListeners();
         await client.destroy();
       } catch (destroyErr) {
         log('Recovery: destroy error (continuing):', describeError(destroyErr));
@@ -533,14 +578,42 @@ app.get('/api/chats', async (req, res) => {
     log(`Returning ${list.length} chats (of ${filtered.length} filtered, ${chats.length} total)`);
     res.json(list);
   } catch (err) {
-    log('Chats error:', describeError(err));
+    consecutiveGetChatsFailures++;
+    log('Chats error:', describeError(err), `(failure #${consecutiveGetChatsFailures})`);
     res.status(500).json({ error: describeError(err) });
+
+    if (consecutiveGetChatsFailures >= MAX_GETCHATS_FAILURES) {
+      log(`getChats() failed ${consecutiveGetChatsFailures} times in a row — attempting client recovery`);
+      consecutiveGetChatsFailures = 0;
+      attemptClientRecovery();
+    }
   }
 });
 
-// Profile picture cache
-const profilePicCache = new Map();
-const PROFILE_PIC_CACHE_MS = 3600000; // 1 hour
+// Profile picture cache (bounded to prevent memory leaks)
+const profilePicCache = new BoundedCache(2000, 1200000); // max 2000 entries, 20 min TTL
+
+// Fetch profile pic URL from WhatsApp servers using the newer bridge API
+async function fetchProfilePicUrl(contactId) {
+  return await client.pupPage.evaluate(async (cid) => {
+    try {
+      const chat = await window.WWebJS.getChat(cid);
+      const result = await window
+        .require('WAWebContactProfilePicThumbBridge')
+        .requestProfilePicFromServer(chat);
+      return result?.eurl || null;
+    } catch (err) {
+      if (err.name === 'ServerStatusCodeError') return null;
+      try {
+        const chatWid = window.Store.WidFactory.createWid(cid);
+        const result = await window.Store.ProfilePic.requestProfilePicFromServer(chatWid);
+        return result?.eurl || null;
+      } catch {
+        return null;
+      }
+    }
+  }, contactId);
+}
 
 // Get profile picture for a chat/contact
 app.get('/api/profile-pic/:chatId', async (req, res) => {
@@ -549,25 +622,27 @@ app.get('/api/profile-pic/:chatId', async (req, res) => {
   }
 
   const chatId = normalizeChatId(req.params.chatId);
+  const forceRefresh = req.query.refresh === '1';
 
-  // Check cache first
-  const cached = profilePicCache.get(chatId);
-  if (cached && (Date.now() - cached.timestamp) < PROFILE_PIC_CACHE_MS) {
-    return res.json({ url: cached.url });
+  // Check cache first (skip if force refresh)
+  if (!forceRefresh) {
+    const cached = profilePicCache.get(chatId);
+    if (cached) {
+      return res.json({ url: cached.url });
+    }
   }
 
   try {
-    const contact = await client.getContactById(chatId);
-    const url = await contact.getProfilePicUrl();
+    const url = await fetchProfilePicUrl(chatId);
 
     // Cache the result (even if null)
-    profilePicCache.set(chatId, { url: url || null, timestamp: Date.now() });
+    profilePicCache.set(chatId, { url: url || null });
 
     res.json({ url: url || null });
   } catch (err) {
-    log('Profile pic error:', err.message);
+    log('Profile pic error for', chatId, ':', err.message);
     // Cache failures too to avoid repeated attempts
-    profilePicCache.set(chatId, { url: null, timestamp: Date.now() });
+    profilePicCache.set(chatId, { url: null });
     res.json({ url: null });
   }
 });
@@ -959,15 +1034,14 @@ app.get('/api/media/:chatId/:msgId', async (req, res) => {
   }
 });
 
-// Contact name cache for group messages
-const contactNameCache = new Map();
-const CONTACT_NAME_CACHE_MS = 1800000; // 30 minutes
+// Contact name cache for group messages (bounded to prevent memory leaks)
+const contactNameCache = new BoundedCache(2000, 1800000); // max 2000 entries, 30 min TTL
 
 async function getContactInfo(contactId) {
   if (!client || !isReady) return { name: null, profilePic: null };
 
   const cached = contactNameCache.get(contactId);
-  if (cached && (Date.now() - cached.timestamp) < CONTACT_NAME_CACHE_MS) {
+  if (cached) {
     return cached;
   }
 
@@ -978,22 +1052,22 @@ async function getContactInfo(contactId) {
 
     // Try to get profile pic (cached separately)
     const picCached = profilePicCache.get(contactId);
-    if (picCached && (Date.now() - picCached.timestamp) < PROFILE_PIC_CACHE_MS) {
+    if (picCached) {
       profilePic = picCached.url;
     } else {
       try {
-        profilePic = await contact.getProfilePicUrl() || null;
-        profilePicCache.set(contactId, { url: profilePic, timestamp: Date.now() });
+        profilePic = await fetchProfilePicUrl(contactId) || null;
+        profilePicCache.set(contactId, { url: profilePic });
       } catch {
-        profilePicCache.set(contactId, { url: null, timestamp: Date.now() });
+        profilePicCache.set(contactId, { url: null });
       }
     }
 
-    const info = { name, profilePic, timestamp: Date.now() };
+    const info = { name, profilePic };
     contactNameCache.set(contactId, info);
     return info;
   } catch {
-    const info = { name: null, profilePic: null, timestamp: Date.now() };
+    const info = { name: null, profilePic: null };
     contactNameCache.set(contactId, info);
     return info;
   }
@@ -1012,7 +1086,7 @@ async function batchGetContactInfo(contactIds, concurrency = 5) {
   // First, collect cached results and identify uncached IDs
   for (const id of contactIds) {
     const cached = contactNameCache.get(id);
-    if (cached && cached.name && (Date.now() - cached.timestamp) < CONTACT_NAME_CACHE_MS) {
+    if (cached && cached.name) {
       results[id] = cached;
     } else {
       uncachedIds.push(id);
@@ -1038,18 +1112,18 @@ async function batchGetContactInfo(contactIds, concurrency = 5) {
         // Try to get profile pic from cache first
         let profilePic = null;
         const picCached = profilePicCache.get(id);
-        if (picCached && (Date.now() - picCached.timestamp) < PROFILE_PIC_CACHE_MS) {
+        if (picCached) {
           profilePic = picCached.url;
         } else {
           try {
-            profilePic = await contact.getProfilePicUrl() || null;
-            profilePicCache.set(id, { url: profilePic, timestamp: Date.now() });
+            profilePic = await fetchProfilePicUrl(id) || null;
+            profilePicCache.set(id, { url: profilePic });
           } catch {
-            profilePicCache.set(id, { url: null, timestamp: Date.now() });
+            profilePicCache.set(id, { url: null });
           }
         }
 
-        const info = { name, profilePic, timestamp: Date.now() };
+        const info = { name, profilePic };
         contactNameCache.set(id, info);
         results[id] = info;
 
@@ -1058,7 +1132,7 @@ async function batchGetContactInfo(contactIds, concurrency = 5) {
         }
       } catch (err) {
         // Cache the failure to avoid retrying immediately
-        const info = { name: null, profilePic: null, timestamp: Date.now() };
+        const info = { name: null, profilePic: null };
         contactNameCache.set(id, info);
         results[id] = info;
       }
@@ -1131,7 +1205,6 @@ app.get('/api/chats/:id/messages', async (req, res) => {
             profilePic: null,
             isAdmin: p.isAdmin,
             isSuperAdmin: p.isSuperAdmin,
-            timestamp: Date.now()
           });
         }
       }
@@ -1477,6 +1550,15 @@ app.post('/api/chats/:id/media-url', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3008;
+// Periodic cache sweep to evict expired entries (every 15 minutes)
+setInterval(() => {
+  const beforeContact = contactNameCache.size;
+  const beforePic = profilePicCache.size;
+  contactNameCache.sweep();
+  profilePicCache.sweep();
+  log(`Cache sweep: contacts ${beforeContact}->${contactNameCache.size}, pics ${beforePic}->${profilePicCache.size}`);
+}, 15 * 60 * 1000);
+
 server.listen(PORT, '0.0.0.0', () => {
   log(`WhatsApp API running on port ${PORT}`);
   log(`WebSocket server available at ws://0.0.0.0:${PORT}`);
