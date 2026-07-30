@@ -7,6 +7,7 @@ type AvatarProps = {
   name?: string;
   isGroup?: boolean;
   size?: "sm" | "md" | "lg";
+  onImageError?: () => void;
 };
 
 const sizeClasses = {
@@ -21,7 +22,7 @@ const iconSizes = {
   lg: "h-6 w-6",
 };
 
-export function Avatar({ src, name, isGroup, size = "md" }: AvatarProps) {
+export function Avatar({ src, name, isGroup, size = "md", onImageError }: AvatarProps) {
   const sizeClass = sizeClasses[size];
   const iconSize = iconSizes[size];
 
@@ -34,6 +35,7 @@ export function Avatar({ src, name, isGroup, size = "md" }: AvatarProps) {
           className="h-full w-full object-cover"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = 'none';
+            onImageError?.();
           }}
         />
       ) : (

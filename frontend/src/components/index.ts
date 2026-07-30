@@ -5,6 +5,7 @@ export { ConnectingScreen } from "./ConnectingScreen";
 export { DebugPanel } from "./DebugPanel";
 export { LoadingScreen } from "./LoadingScreen";
 export { Message } from "./Message";
+export { MediaPreview } from "./MediaPreview";
 export { MessageInput } from "./MessageInput";
 export { MessageList } from "./MessageList";
 export { QRScreen } from "./QRScreen";

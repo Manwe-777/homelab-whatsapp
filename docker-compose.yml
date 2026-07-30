@@ -13,6 +13,9 @@ services:
     environment:
       - PORT=3008
       - DEBUG=true
+    # Memory limits to prevent unbounded growth
+    mem_limit: 2g
+    memswap_limit: 2g
     # Increase shared memory for Chromium
     shm_size: '2gb'
 

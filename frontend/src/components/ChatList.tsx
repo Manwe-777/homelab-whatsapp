@@ -9,10 +9,11 @@ type ChatListProps = {
   selectedChat: Chat | null;
   profilePics: Record<string, string | null>;
   onSelectChat: (chat: Chat) => void;
+  onProfilePicError?: (chatId: string) => void;
   className?: string;
 };
 
-export function ChatList({ chats, selectedChat, profilePics, onSelectChat, className = "" }: ChatListProps) {
+export function ChatList({ chats, selectedChat, profilePics, onSelectChat, onProfilePicError, className = "" }: ChatListProps) {
   return (
     <div className={`flex w-full flex-col border-r border-zinc-800 md:w-80 ${className}`}>
       <div className="flex-shrink-0 border-b border-zinc-800 p-3">
@@ -42,6 +43,7 @@ export function ChatList({ chats, selectedChat, profilePics, onSelectChat, class
                 src={profilePics[chat.id]}
                 name={chat.name}
                 isGroup={chat.isGroup}
+                onImageError={() => onProfilePicError?.(chat.id)}
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">

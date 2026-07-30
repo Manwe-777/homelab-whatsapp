@@ -23,6 +23,7 @@ import {
   ChatHeader,
   MessageList,
   MessageInput,
+  MediaPreview,
 } from "@/components";
 import type { Chat, Message } from "@/types";
 
@@ -48,10 +49,15 @@ export default function Home() {
   const [profilePics, setProfilePics] = useState<Record<string, string | null>>({});
   const [sendingMedia, setSendingMedia] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingCaptions, setPendingCaptions] = useState<string[]>([]);
+  const [pendingIndex, setPendingIndex] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const selectedChatRef = useRef<Chat | null>(null);
-  const fetchedPicsRef = useRef<Set<string>>(new Set());
+  const fetchedPicsRef = useRef<Map<string, number>>(new Map()); // chatId -> timestamp
 
   useEffect(() => {
     selectedChatRef.current = selectedChat;
@@ -84,11 +90,22 @@ export default function Home() {
     }
   }, [log]);
 
+  const PROFILE_PIC_TTL = 15 * 60 * 1000; // 15 minutes
+
+  const handleProfilePicError = useCallback((chatId: string) => {
+    // Clear the cache entry so next poll cycle re-fetches with refresh=1
+    fetchedPicsRef.current.delete(chatId);
+    setProfilePics(prev => ({ ...prev, [chatId]: null }));
+  }, []);
+
   const fetchProfilePic = useCallback(async (chatId: string) => {
-    if (fetchedPicsRef.current.has(chatId)) return;
-    fetchedPicsRef.current.add(chatId);
+    const now = Date.now();
+    const lastFetched = fetchedPicsRef.current.get(chatId);
+    const isStale = lastFetched && (now - lastFetched > PROFILE_PIC_TTL);
+    if (lastFetched && !isStale) return;
+    fetchedPicsRef.current.set(chatId, now);
     try {
-      const url = await apiFetchProfilePic(chatId);
+      const url = await apiFetchProfilePic(chatId, !!isStale);
       setProfilePics(prev => ({ ...prev, [chatId]: url }));
     } catch {
       setProfilePics(prev => ({ ...prev, [chatId]: null }));
@@ -218,20 +235,43 @@ export default function Home() {
     setReplyingTo(null);
   }, []);
 
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
   const sendMedia = async (file: File) => {
     if (!selectedChat || sendingMedia) return;
+    setPendingFiles([file]);
+    setPendingCaptions([""]);
+    setPendingIndex(0);
+  };
+
+  const sendPendingFiles = async () => {
+    if (!selectedChat || sendingMedia || pendingFiles.length === 0) return;
     setSendingMedia(true);
-    log(`Sending media: ${file.name} (${file.type})`);
+    log(`Sending ${pendingFiles.length} file(s)`);
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      await apiSendMedia(selectedChat.id, base64, file.type, file.name, input.trim() || undefined);
-      setInput("");
-      log("Media sent successfully");
+      for (let i = 0; i < pendingFiles.length; i++) {
+        const file = pendingFiles[i];
+        const caption = pendingCaptions[i] || "";
+        log(`Sending media: ${file.name} (${file.type})`);
+        const base64 = await readFileAsDataUrl(file);
+        await apiSendMedia(
+          selectedChat.id,
+          base64,
+          file.type || "application/octet-stream",
+          file.name,
+          caption.trim() || undefined
+        );
+      }
+      log("All media sent successfully");
+      setPendingFiles([]);
+      setPendingCaptions([]);
+      setPendingIndex(0);
       fetchMessages(selectedChat.id);
     } catch (e) {
       log("Media send error: " + String(e));
@@ -239,6 +279,60 @@ export default function Home() {
       setSendingMedia(false);
     }
   };
+
+  const handleClosePreview = useCallback(() => {
+    if (sendingMedia) return;
+    setPendingFiles([]);
+    setPendingCaptions([]);
+    setPendingIndex(0);
+  }, [sendingMedia]);
+
+  const handleFilesDropped = useCallback(
+    (files: File[]) => {
+      if (!selectedChat || files.length === 0) return;
+      setPendingFiles((prev) => [...prev, ...files]);
+      setPendingCaptions((prev) => [...prev, ...files.map(() => "")]);
+    },
+    [selectedChat]
+  );
+
+  const handleCaptionChange = useCallback((idx: number, caption: string) => {
+    setPendingCaptions((prev) => {
+      const next = [...prev];
+      next[idx] = caption;
+      return next;
+    });
+  }, []);
+
+  const handleRemovePending = useCallback((idx: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
+    setPendingCaptions((prev) => prev.filter((_, i) => i !== idx));
+    setPendingIndex((prev) => {
+      if (idx < prev) return Math.max(0, prev - 1);
+      return prev;
+    });
+  }, []);
+
+  // Clipboard paste: capture image/file paste anywhere in the chat view
+  useEffect(() => {
+    if (!selectedChat) return;
+    const handler = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      // Skip when pasting into a normal text input/textarea, unless it's empty and only files are present
+      const isEditable =
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const items = e.clipboardData?.files;
+      if (!items || items.length === 0) return;
+      const files = Array.from(items);
+      // If the user is typing in a text field and there's no file content, do nothing
+      if (isEditable && files.length === 0) return;
+      e.preventDefault();
+      handleFilesDropped(files);
+    };
+    window.addEventListener("paste", handler);
+    return () => window.removeEventListener("paste", handler);
+  }, [selectedChat, handleFilesDropped]);
 
   const handleSelectChat = useCallback((chat: Chat) => {
     setSelectedChat(chat);
@@ -392,8 +486,49 @@ export default function Home() {
     return <ConnectingScreen apiReachable={apiReachable} logs={logs} />;
   }
 
+  const hasDragFiles = (e: React.DragEvent) => {
+    const types = e.dataTransfer?.types;
+    if (!types) return false;
+    for (let i = 0; i < types.length; i++) {
+      if (types[i] === "Files") return true;
+    }
+    return false;
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!selectedChat || !hasDragFiles(e)) return;
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    setIsDragging(true);
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!selectedChat || !hasDragFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!selectedChat) return;
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDragging(false);
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    if (!selectedChat) return;
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length > 0) handleFilesDropped(files);
+  };
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-zinc-900">
+    <div
+      className="relative flex h-screen w-screen overflow-hidden bg-zinc-900"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Chat list - full width on mobile, fixed width on desktop */}
       {/* Hidden on mobile when a chat is selected */}
       <ChatList
@@ -401,6 +536,7 @@ export default function Home() {
         selectedChat={selectedChat}
         profilePics={profilePics}
         onSelectChat={handleSelectChat}
+        onProfilePicError={handleProfilePicError}
         className={selectedChat ? "hidden md:flex" : "flex"}
       />
 
@@ -413,6 +549,7 @@ export default function Home() {
               chat={selectedChat}
               profilePic={profilePics[selectedChat.id]}
               onBack={handleBack}
+              onProfilePicError={() => handleProfilePicError(selectedChat.id)}
             />
             <MessageList
               messages={messages}
@@ -444,6 +581,37 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Drag-and-drop overlay */}
+      {isDragging && selectedChat && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-emerald-500/10 backdrop-blur-sm">
+          <div className="rounded-2xl border-2 border-dashed border-emerald-400 bg-zinc-900/80 px-10 py-8 text-center">
+            <svg className="mx-auto h-16 w-16 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.9A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M9 19l3-3m0 0l3 3m-3-3v12" />
+            </svg>
+            <div className="mt-3 text-lg font-medium text-white">Drop to send</div>
+            <div className="mt-1 text-sm text-zinc-400">
+              Images, videos, documents — release to attach
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Media preview modal */}
+      {pendingFiles.length > 0 && selectedChat && (
+        <MediaPreview
+          files={pendingFiles}
+          captions={pendingCaptions}
+          currentIndex={pendingIndex}
+          sending={sendingMedia}
+          onIndexChange={setPendingIndex}
+          onCaptionChange={handleCaptionChange}
+          onRemove={handleRemovePending}
+          onAddFiles={handleFilesDropped}
+          onClose={handleClosePreview}
+          onSend={sendPendingFiles}
+        />
+      )}
     </div>
   );
 }

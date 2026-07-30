@@ -125,9 +125,10 @@ export async function markChatAsRead(chatId: string) {
   await fetch(`/api/chats/${id}/read`, { method: 'POST' });
 }
 
-export async function fetchProfilePic(chatId: string) {
+export async function fetchProfilePic(chatId: string, refresh = false) {
   const id = encodeURIComponent(chatId);
-  const res = await fetch(`/api/profile-pic/${id}`);
+  const qs = refresh ? '?refresh=1' : '';
+  const res = await fetch(`/api/profile-pic/${id}${qs}`);
   if (!res.ok) return null;
   const data = await res.json();
   return data.url;

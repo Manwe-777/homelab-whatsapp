@@ -8,9 +8,10 @@ type ChatHeaderProps = {
   chat: Chat;
   profilePic?: string | null;
   onBack?: () => void;
+  onProfilePicError?: () => void;
 };
 
-export function ChatHeader({ chat, profilePic, onBack }: ChatHeaderProps) {
+export function ChatHeader({ chat, profilePic, onBack, onProfilePicError }: ChatHeaderProps) {
   return (
     <div className="flex flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
       {onBack && (
@@ -28,6 +29,7 @@ export function ChatHeader({ chat, profilePic, onBack }: ChatHeaderProps) {
         src={profilePic}
         name={chat.name}
         isGroup={chat.isGroup}
+        onImageError={onProfilePicError}
       />
       <div className="min-w-0 flex-1">
         <h2 className="truncate font-medium text-white">{chat.name}</h2>

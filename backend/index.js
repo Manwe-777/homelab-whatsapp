@@ -52,6 +52,14 @@ function log(...args) {
   }
 }
 
+// whatsapp-web.js/puppeteer occasionally leak unhandled rejections during
+// transitional auth/Puppeteer states (e.g. "auth timeout" from initialize()).
+// Node 20 defaults to crashing the process on these; log and keep running so
+// the existing reconnect logic can recover instead of entering a Docker restart loop.
+process.on('unhandledRejection', (reason) => {
+  log('Unhandled promise rejection (suppressed):', reason && reason.message ? reason.message : reason);
+});
+
 // Extract useful info from potentially minified errors
 function describeError(err) {
   if (!err) return 'Unknown error (falsy)';
@@ -122,6 +130,10 @@ let statsLastUpdated = 0;
 const STATS_CACHE_MS = 10000; // Cache stats for 10 seconds
 let consecutiveGetChatsFailures = 0;
 const MAX_GETCHATS_FAILURES = 10; // After this many, attempt recovery
+// Recovery must not fire before the first successful 'ready' — getChats() failures
+// during initial sync are expected and tearing the client down mid-pairing triggers
+// a LOGOUT from WhatsApp's side, undoing the pairing.
+let hasEverBeenReady = false;
 
 function initClient() {
   if (client) return client;
@@ -161,6 +173,8 @@ function initClient() {
 
   client.on('ready', () => {
     isReady = true;
+    hasEverBeenReady = true;
+    consecutiveGetChatsFailures = 0;
     qrData = null;
     pairingCode = null;
     log('WhatsApp client ready');
@@ -284,7 +298,27 @@ function initClient() {
     });
   });
 
-  client.initialize();
+  client.initialize().catch(async (err) => {
+    log('client.initialize() rejected:', describeError(err));
+    isReady = false;
+    qrData = null;
+    pairingCode = null;
+    // Close Chromium so the next attempt isn't blocked by the SingletonLock
+    // in the shared userDataDir. destroy() may itself reject if the browser
+    // is already gone; swallow that.
+    const stale = client;
+    client = null;
+    if (stale) {
+      try { stale.removeAllListeners(); } catch {}
+      try { await stale.destroy(); } catch (e) { log('destroy() after init failure:', describeError(e)); }
+      try { await stale.pupBrowser?.close(); } catch {}
+    }
+    log('Scheduling reconnection after initialize failure in 5 seconds...');
+    setTimeout(() => {
+      log('Attempting to reconnect after initialize failure...');
+      initClient();
+    }, 5000);
+  });
   return client;
 }
 
@@ -295,6 +329,11 @@ initClient();
 let recoveryInProgress = false;
 async function attemptClientRecovery() {
   if (recoveryInProgress) return;
+  if (!hasEverBeenReady) {
+    log('Recovery skipped: client has never reached ready (initial sync in progress)');
+    consecutiveGetChatsFailures = 0;
+    return;
+  }
   recoveryInProgress = true;
 
   try {
